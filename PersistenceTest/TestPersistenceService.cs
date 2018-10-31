@@ -29,9 +29,7 @@ namespace Persistence.UnitTests
 			}
 			finally
 			{
-				ps.Stop();
-				subscription.Dispose();
-				GC.WaitForPendingFinalizers();
+				CleanupAfterTest(ps, tempFile, subscription);
 			}
 		}
 
@@ -56,10 +54,70 @@ namespace Persistence.UnitTests
 			}
 			finally
 			{
-				ps.Stop();
-				subscription.Dispose();
-				GC.WaitForPendingFinalizers();
+				CleanupAfterTest(ps, tempFile, subscription);
 			}
 		}
+
+		[TestMethod]
+		public void TestMedTestFileWriteFromTransaction()
+		{
+			TestHelper helper = new TestHelper();
+			PersistenceService ps = new PersistenceService();
+			int count = 0;
+			bool complete = false;
+			string tempFile = string.Empty;
+			IDisposable subscription = ps.TransactionElementsSource.Subscribe(x => count += x.Elements.Count, () => complete = true);
+
+			try
+			{
+				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTFILE));
+
+				ps.StartFromTransaction(tempFile, 32).Wait();
+
+				Assert.IsTrue(complete);
+				Assert.AreEqual(24, count);
+			}
+			finally
+			{
+				CleanupAfterTest(ps, tempFile, subscription);
+			}
+		}
+
+		[TestMethod]
+		public void TestBigFile()
+		{
+			TestHelper helper = new TestHelper();
+			PersistenceService ps = new PersistenceService();
+			int count = 0;
+			bool complete = false;
+			string tempFile = string.Empty;
+			IDisposable subscription = ps.TransactionElementsSource.Subscribe(x => count += x.Elements.Count, () => complete = true);
+
+			try
+			{
+				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.BFFTEST));
+
+				ps.Start(tempFile).Wait();
+
+				Assert.IsTrue(complete);
+				Assert.AreEqual(113699, count);
+			}
+			finally
+			{
+				CleanupAfterTest(ps, tempFile, subscription);
+
+			}
+		}
+
+		private static void CleanupAfterTest(PersistenceService ps, string tempFile, IDisposable subscription)
+		{
+			ps.Stop();
+			subscription.Dispose();
+			GC.WaitForPendingFinalizers();
+			if (File.Exists(tempFile))
+				File.Delete(tempFile);
+		}
+
+
 	}
 }

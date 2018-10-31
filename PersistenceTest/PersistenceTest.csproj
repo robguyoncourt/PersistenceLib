@@ -6,8 +6,13 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="BFF.xml.gz" />
+  </ItemGroup>
+
 
   <ItemGroup>
+    <EmbeddedResource Include="BFF.xml.gz" />
     <EmbeddedResource Include="MedTestDataSwitch2.xml" />
     <EmbeddedResource Include="MedTestDataSwitch1.xml" />
     <EmbeddedResource Include="MedTestData.xml" />

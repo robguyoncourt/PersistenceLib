@@ -1,11 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Reactive.Subjects;
+﻿using System.IO;
 using System.Reflection;
-using System.Reactive.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.IO.Compression;
 
 namespace Persistence.UnitTests
 {
@@ -15,7 +11,7 @@ namespace Persistence.UnitTests
 		public readonly string MEDIUMTESTFILE = "MedTestData.xml";
 		public readonly string MEDIUMTESTSWITCH1FILE = "MedTestDataSwitch1.xml";
 		public readonly string MEDIUMTESTSWITCH2FILE = "MedTestDataSwitch2.xml";
-
+		public readonly string BFFTEST = "BFF.xml.gz";
 
 		public string GetResourceTextFile(string filename)
 		{
@@ -29,7 +25,17 @@ namespace Persistence.UnitTests
 			using (Stream stream = Assembly.GetExecutingAssembly().
 			 GetManifestResourceStream("PersistenceTest." + filename))
 			{
-				retVal = new StreamReader(stream).ReadToEnd();
+				if (filename.EndsWith(".gz"))
+				{
+					using (GZipStream decompressionStream = new GZipStream(stream, CompressionMode.Decompress))
+					{
+						retVal = new StreamReader(decompressionStream).ReadToEnd();
+					}
+				}
+				else
+				{
+					retVal = new StreamReader(stream).ReadToEnd();
+				}
 			}
 
 			return retVal;

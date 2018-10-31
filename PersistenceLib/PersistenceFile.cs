@@ -1,10 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Reactive.Subjects;
-using System.Text;
 using System.Reactive.Linq;
-using System.Collections.ObjectModel;
-using System.Linq;
 using System.Xml;
 using System.Xml.Linq;
 using System.Threading;
@@ -19,16 +16,18 @@ namespace Persistence
 		private static Regex s_fileSwitchRegex = new Regex(@"(Switch to file )(.+\.[a-zA-Z]{3})", RegexOptions.Compiled);
 		private static Regex s_startLoggingRegex = new Regex(@"start logging", RegexOptions.Compiled);
 		private static Regex s_stopLoggingRegex = new Regex(@"stop logging", RegexOptions.Compiled);
+
 		private const int fileSwtichRegexFileNameGroup = 2;
 
 		private readonly XmlReader _xmlReader;
+		private readonly Subject<XElement> _elementSubject;
+
 		private bool _disposed = false;
 
 		public string NextFileName { get; private set; }
 		public bool IsFileSwitch { get; private set; }
 		public bool IsStop { get; private set; }
 
-		private readonly Subject<XElement> _elementSubject;
 		/// <summary>
 		/// Parameterless constructor for mock
 		/// </summary>
@@ -40,14 +39,20 @@ namespace Persistence
 			if (string.IsNullOrEmpty(path) || !File.Exists(path))
 				throw new ArgumentException("Filename " + path + " is invalid");
 
+			_xmlReader = XmlReader.Create(new FileStream(path, FileMode.Open, FileAccess.Read), CreateXMLReaderSettings());
+
+			_elementSubject = new Subject<XElement>();
+
+		}
+
+		private  XmlReaderSettings CreateXMLReaderSettings()
+		{
 			XmlReaderSettings readerSettings = new XmlReaderSettings();
 			readerSettings.Async = true;
 			readerSettings.IgnoreComments = false;
 			readerSettings.ConformanceLevel = ConformanceLevel.Fragment;
-			_xmlReader = XmlReader.Create(new FileStream(path, FileMode.Open, FileAccess.Read), readerSettings);
-
-			_elementSubject = new Subject<XElement>();
-
+			readerSettings.CloseInput = true;
+			return readerSettings;
 		}
 
 		protected virtual void Dispose(bool disposing)
@@ -96,13 +101,12 @@ namespace Persistence
 							var element = await XNode.ReadFromAsync(_xmlReader, token) as XElement;
 
 							if (element != null)
-							{
 								_elementSubject.OnNext(element);
-							}
 							break;
 
 						case XmlNodeType.Comment:
 							var comment = await XNode.ReadFromAsync(_xmlReader, token) as XComment;
+
 							Match fileSwitchMatch = s_fileSwitchRegex.Match(comment.Value);
 							IsFileSwitch = fileSwitchMatch.Success;
 							if (IsFileSwitch)
