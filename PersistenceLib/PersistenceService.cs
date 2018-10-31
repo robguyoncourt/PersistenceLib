@@ -18,6 +18,8 @@ namespace Persistence
 	/// </summary>
 	public class PersistenceService
 	{
+		private const long INVALID_TRANS_ID = -1;
+
 		private Subject<string> _fileSwitched = new Subject<string>();
 		private Subject<TransactionElements> _transactionsSource = new Subject<TransactionElements>();
 		private readonly Func<string, string> _getFullFilePath;
@@ -25,6 +27,9 @@ namespace Persistence
 
 		private PersistenceFile _currentPersistFile;
 		private PersistenceFileWatcher _pfsWatcher;
+
+		private long _initalTransactionId = INVALID_TRANS_ID;
+		private string _initialFile;
 
 		public PersistenceService() :
 			this(x => { return x;})
@@ -39,8 +44,14 @@ namespace Persistence
 
 		public async Task Start(string initialFile)
 		{
-			InitialFile = initialFile;
+			_initialFile = initialFile;
 			await FileSwitch.ForEachAsync<string>(async fileName => await PersistFile(fileName), _tokenSource.Token);
+		}
+
+		public async Task StartFromTransaction(string initialFile, long transactionId)
+		{
+			_initalTransactionId = transactionId;
+			await Start(initialFile);
 		}
 
 		public void Stop()
@@ -58,13 +69,11 @@ namespace Persistence
 			}
 		}
 
-		private string InitialFile { get; set; }
-
 		private IObservable<string> FileSwitch
 		{
 			get
 			{
-				return Observable.Return(InitialFile).Concat(this._fileSwitched.AsObservable());
+				return Observable.Return(_initialFile).Concat(this._fileSwitched.AsObservable());
 			}
 		}
 
@@ -98,20 +107,22 @@ namespace Persistence
 
 		private void ParseElement(XElement element)
 		{
-			const long INVALID_TRANS_ID = -1;
 			long transaction_id;
 			if (element.Name == "lzMessage")
 			{
 				if (!long.TryParse(element.Attribute("transaction_id").Value ?? INVALID_TRANS_ID.ToString(), out transaction_id))
 					transaction_id = INVALID_TRANS_ID;
 
-				TransactionElements transactionElements = new TransactionElements(transaction_id);
-				foreach (var child in element.Descendants())
+				if (transaction_id > INVALID_TRANS_ID && transaction_id >= _initalTransactionId)
 				{
-					transactionElements.Elements.Add(new TransactionElement(transaction_id, child.Name.LocalName, child.Attribute("action").Value ?? string.Empty,
-						child.Attributes().ToDictionary(attr => attr.Name.LocalName, attr => attr.Value)));
+					TransactionElements transactionElements = new TransactionElements(transaction_id);
+					foreach (var child in element.Descendants())
+					{
+						transactionElements.Elements.Add(new TransactionElement(transaction_id, child.Name.LocalName, child.Attribute("action").Value ?? string.Empty,
+							child.Attributes().ToDictionary(attr => attr.Name.LocalName, attr => attr.Value)));
+					}
+					_transactionsSource.OnNext(transactionElements);
 				}
-				_transactionsSource.OnNext(transactionElements);
 			}
 			else
 			{

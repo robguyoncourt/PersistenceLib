@@ -61,5 +61,33 @@ namespace Persistence.UnitTests
 				GC.WaitForPendingFinalizers();
 			}
 		}
+
+		[TestMethod]
+		public void TestMedTestFileWriteFromTransation()
+		{
+			TestHelper helper = new TestHelper();
+			PersistenceService ps = new PersistenceService();
+			int count = 0;
+			bool complete = false;
+			string tempFile = string.Empty;
+			IDisposable subscription = ps.TransactionElementsSource.Subscribe(x => count += x.Elements.Count, () => complete = true);
+
+			try
+			{
+				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTFILE));
+
+				ps.StartFromTransaction(tempFile, 32).Wait();
+
+				Assert.IsTrue(complete);
+				Assert.AreEqual(24, count);
+			}
+			finally
+			{
+				ps.Stop();
+				subscription.Dispose();
+				GC.WaitForPendingFinalizers();
+			}
+		}
+
 	}
 }
