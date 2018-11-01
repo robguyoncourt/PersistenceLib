@@ -3,6 +3,15 @@ using System.Collections.Generic;
 
 namespace Persistence
 {
+
+	public enum ActionType
+	{
+		Unknown,
+		Insert,
+		Update,
+		Delete
+	}
+
 	public class TransactionElement
 	{
 
@@ -10,11 +19,11 @@ namespace Persistence
 
 		public readonly string ElementName;
 
-		public readonly string Action;
+		public readonly ActionType Action;
 
 		public readonly Dictionary<string, string> Values;
 
-		public TransactionElement(long transactionId, string elementName, string action, Dictionary<string, string> attributeKeyValuePairs)
+		public TransactionElement(long transactionId, string elementName, ActionType action, Dictionary<string, string> attributeKeyValuePairs)
 		{
 
 			TransactionId = transactionId;

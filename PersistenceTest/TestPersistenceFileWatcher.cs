@@ -16,7 +16,7 @@ namespace Persistence.UnitTests
 		public void SystemFileWatcherContentChangedRaisesRead()
 		{
 
-
+			//arrange
 			Mock<PersistenceFile> mockPersistenceFile = new Mock<PersistenceFile>();
 			Mock<SystemFileWatcherWrapper> mockSystemFileWatcher = new Mock<SystemFileWatcherWrapper>();
 			PersistenceFileWatcher pfw = new PersistenceFileWatcher(mockPersistenceFile.Object, mockSystemFileWatcher.Object);

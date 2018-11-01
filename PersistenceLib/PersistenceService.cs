@@ -8,6 +8,7 @@ using System.Reactive.Subjects;
 using System.Xml.Linq;
 using System.Linq;
 using System.Reactive.Concurrency;
+using System.Collections.Generic;
 
 namespace Persistence
 {
@@ -23,13 +24,14 @@ namespace Persistence
 		private readonly CancellationTokenSource _tokenSource;
 		private readonly EventLoopScheduler _scheduler;
 
+		private readonly Dictionary<string, ActionType> _actionToActionTypeMap;
+		private readonly Dictionary<string, string> _elementNameMap;
+
 		private Subject<string> _fileSwitched = new Subject<string>();
 		private Subject<TransactionElements> _transactionsSource = new Subject<TransactionElements>();
 
 		private PersistenceFile _currentPersistFile;
 		private PersistenceFileWatcher _pfsWatcher;
-
-		private IDisposable _transSubscription;
 
 		private long _initalTransactionId = INVALID_TRANS_ID;
 		private string _initialFile;
@@ -43,6 +45,41 @@ namespace Persistence
 			_getFullFilePath = getFullFilePath;
 			_tokenSource = new CancellationTokenSource();
 			_scheduler = new EventLoopScheduler();
+
+			_actionToActionTypeMap = new Dictionary<string, ActionType>
+			{
+				{"", ActionType.Unknown },
+				{"Amended", ActionType.Update },
+				{"Added", ActionType.Insert},
+				{"CancelledStatusUpdated", ActionType.Update },
+				{"RolledOver", ActionType.Update },
+				{"Sent", ActionType.Update },
+				{"Demoted", ActionType.Update },
+				{"PostConfirmed", ActionType.Update }
+
+			};
+			
+			_elementNameMap = new Dictionary<string, string>
+			{
+				{"lzControl", "control_messages" },
+				{"lzExecutionMerge", "execution_merges" },
+				{"lzExecution", "executions" },
+				{"lzPairOff", "pairoffs" },
+				{"lzAudit", "audit_events" },
+				{"lzRelease", "releases" },
+				{"lzAllocation", "allocations" },
+				{"lzStrategy", "strategies" },
+				{"lzOrder", "orders" },
+				{"lzListOrder", "list_orders" },
+				{"lzMarketList", "market_lists" },
+				{"lzQuote", "quotes" },
+				{"lzQuoteList", "quote_lists" },
+				{"lzParameter", "minerva_params" },
+				{"lzContingencyGroup", "contingency_groups" },
+				{"lzContingencyLink", "contingency_links" },
+				{"lzCharge", "charges" },
+				{"lzCollateral", "collaterals" },
+			};
 		}
 
 		public async Task Start(string initialFile)
@@ -106,6 +143,7 @@ namespace Persistence
 				{
 					_transactionsSource.OnCompleted();
 					_fileSwitched.OnCompleted();
+
 				}
 				});
 
@@ -126,7 +164,17 @@ namespace Persistence
 					TransactionElements transactionElements = new TransactionElements(transaction_id);
 					foreach (var child in element.Descendants())
 					{
-						transactionElements.Elements.Add(new TransactionElement(transaction_id, child.Name.LocalName, child.Attribute("action").Value ?? string.Empty,
+
+						string action = child.Attribute("action").Value ?? string.Empty;
+						if (!_actionToActionTypeMap.ContainsKey(action))
+							_actionToActionTypeMap.Add(action, ActionType.Unknown);
+
+						string elementName = child.Name.LocalName;
+						if (!_elementNameMap.ContainsKey(elementName))
+							_elementNameMap.Add(elementName, string.Empty);
+
+						transactionElements.Elements.Add(new TransactionElement(transaction_id,_elementNameMap[elementName],
+							_actionToActionTypeMap[action],
 							child.Attributes().ToDictionary(attr => attr.Name.LocalName, attr => attr.Value)));
 					}
 					_transactionsSource.OnNext(transactionElements);
