@@ -19,21 +19,33 @@ namespace Persistence
 
 		public readonly string ElementName;
 
+		public readonly string ElementKey;
+
 		public readonly ActionType Action;
 
 		public readonly Dictionary<string, string> Values;
 
-		public TransactionElement(long transactionId, string elementName, ActionType action, Dictionary<string, string> attributeKeyValuePairs)
+		private string _dbStmtKey = null;
+
+		public TransactionElement(long transactionId, string elementName, string elementKey, ActionType action, Dictionary<string, string> attributeKeyValuePairs)
 		{
 
 			TransactionId = transactionId;
 
-			ElementName = elementName;
+			ElementName = elementName.ToLower();
+
+			ElementKey = elementKey.ToLower();
 
 			Values = attributeKeyValuePairs;
 
 			Action = action;
 		}
 
+		public string GetDBStatementKey()
+		{
+			if (_dbStmtKey == null)
+				_dbStmtKey = $"{ElementName}_{Action}_{string.Join('.', Values.Keys)}";
+			return _dbStmtKey;
+		}
 	}
 }

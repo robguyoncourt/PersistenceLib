@@ -2,6 +2,8 @@
 using System;
 using System.IO;
 using System.Reactive.Disposables;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Persistence.UnitTests
 {
@@ -9,7 +11,7 @@ namespace Persistence.UnitTests
 	public class TestPersistenceService
 	{
 		[TestMethod]
-		public void TestSmallTestFileWrite()
+		public async Task TestSmallTestFileWriteAsync()
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
@@ -26,24 +28,25 @@ namespace Persistence.UnitTests
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.SMALLTESTFILE));
 
-				ps.Start(tempFile).Wait();
+				await ps.Start(tempFile);
 
-			// verify
+				// verify
 				Assert.IsTrue(complete);
 				Assert.AreEqual(5, count);
+
 			}
 			finally
 			{
-				CleanupAfterTest(ps, tempFile, subscription);
+				TestHelper.CleanupAfterTest(ps, tempFile, subscription);
 			}
 		}
 
 		[TestMethod]
-		public void TestMedTestFileSwitch1Write()
+		public async Task TestMedTestFileSwitch1Write()
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
-			PersistenceService ps = new PersistenceService(x => helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(x)));
+			PersistenceService ps = new PersistenceService(x => helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(x)),null);
 			int count = 0;
 			bool complete = false;
 			string tempFile = string.Empty;
@@ -57,7 +60,7 @@ namespace Persistence.UnitTests
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTSWITCH1FILE));
 
-				ps.Start(tempFile).Wait();
+				await ps.Start(tempFile);
 
 			//verify
 				Assert.IsTrue(complete);
@@ -65,12 +68,12 @@ namespace Persistence.UnitTests
 			}
 			finally
 			{
-				CleanupAfterTest(ps, tempFile, subscription);
+				TestHelper.CleanupAfterTest(ps, tempFile, subscription);
 			}
 		}
 
 		[TestMethod]
-		public void TestMedTestFileWriteFromTransaction()
+		public async Task TestMedTestFileWriteFromTransaction()
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
@@ -88,7 +91,7 @@ namespace Persistence.UnitTests
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTFILE));
 
-				ps.StartFromTransaction(tempFile, 32).Wait();
+				await ps.StartFromTransaction(tempFile, 32);
 
 			// verify
 				Assert.IsTrue(complete);
@@ -96,12 +99,12 @@ namespace Persistence.UnitTests
 			}
 			finally
 			{
-				CleanupAfterTest(ps, tempFile, subscription);
+				TestHelper.CleanupAfterTest(ps, tempFile, subscription);
 			}
 		}
 
 		[TestMethod]
-		public void TestBigFile()
+		public async Task TestBigFile()
 		{
 			//arrange
 			TestHelper helper = new TestHelper();
@@ -118,7 +121,7 @@ namespace Persistence.UnitTests
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.BFFTEST));
 
-				ps.Start(tempFile).Wait();
+				await ps.Start(tempFile);
 				
 			// verify
 				Assert.IsTrue(complete);
@@ -126,18 +129,9 @@ namespace Persistence.UnitTests
 			}
 			finally
 			{
-				CleanupAfterTest(ps, tempFile, subscription);
+				TestHelper.CleanupAfterTest(ps, tempFile, subscription);
 
 			}
-		}
-
-		private static void CleanupAfterTest(PersistenceService ps, string tempFile, IDisposable subscription)
-		{
-			ps.Stop();
-			subscription.Dispose();
-			GC.WaitForPendingFinalizers();
-			if (File.Exists(tempFile))
-				File.Delete(tempFile);
 		}
 
 

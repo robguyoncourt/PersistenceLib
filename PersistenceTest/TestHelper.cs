@@ -2,6 +2,7 @@
 using System.Reflection;
 using System.Text;
 using System.IO.Compression;
+using System;
 
 namespace Persistence.UnitTests
 {
@@ -49,6 +50,7 @@ namespace Persistence.UnitTests
 				var charBuffer = Encoding.UTF8.GetBytes(content);
 				fs.Write(charBuffer, 0, charBuffer.Length);
 				fileName = fs.Name;
+				fs.Close();
 			}
 
 			return fileName;
@@ -58,8 +60,17 @@ namespace Persistence.UnitTests
 		{
 			string tempFile = Path.GetTempFileName();
 
-			return new FileStream(tempFile, FileMode.Open);
+			return new FileStream(tempFile, FileMode.Open, FileAccess.ReadWrite);
 
+		}
+
+		public static void CleanupAfterTest(PersistenceService ps, string tempFile, IDisposable subscription)
+		{
+			ps.Stop();
+			subscription.Dispose();
+			GC.WaitForPendingFinalizers();
+			if (File.Exists(tempFile))
+				File.Delete(tempFile);
 		}
 	}
 }

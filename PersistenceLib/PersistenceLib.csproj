@@ -5,6 +5,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="PersistenceFileWatcher.cs" />
+    <Compile Remove="SystemFileWatcherWrapper.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Data.SqlClient" Version="4.5.1" />
     <PackageReference Include="System.Reactive" Version="4.1.0" />
   </ItemGroup>
 

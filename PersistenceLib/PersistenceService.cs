@@ -25,22 +25,22 @@ namespace Persistence
 		private readonly EventLoopScheduler _scheduler;
 
 		private readonly Dictionary<string, ActionType> _actionToActionTypeMap;
-		private readonly Dictionary<string, string> _elementNameMap;
+		private readonly Dictionary<string, (string key, string name)> _elementNameMap;
 
 		private Subject<string> _fileSwitched = new Subject<string>();
 		private Subject<TransactionElements> _transactionsSource = new Subject<TransactionElements>();
 
 		private PersistenceFile _currentPersistFile;
-		private PersistenceFileWatcher _pfsWatcher;
+		private IPersistDestination _persistDesitination;
 
 		private long _initalTransactionId = INVALID_TRANS_ID;
 		private string _initialFile;
 
 		public PersistenceService() :
-			this(x => { return x;})
+			this(x => { return x;}, null)
 		{ }
 
-		public PersistenceService(Func<string, string> getFullFilePath)
+		public PersistenceService(Func<string, string> getFullFilePath, IPersistDestination persistDestination)
 		{
 			_getFullFilePath = getFullFilePath;
 			_tokenSource = new CancellationTokenSource();
@@ -59,34 +59,37 @@ namespace Persistence
 
 			};
 			
-			_elementNameMap = new Dictionary<string, string>
+			_elementNameMap = new Dictionary<string, (string key, string name)>
 			{
-				{"lzControl", "control_messages" },
-				{"lzExecutionMerge", "execution_merges" },
-				{"lzExecution", "executions" },
-				{"lzPairOff", "pairoffs" },
-				{"lzAudit", "audit_events" },
-				{"lzRelease", "releases" },
-				{"lzAllocation", "allocations" },
-				{"lzStrategy", "strategies" },
-				{"lzOrder", "orders" },
-				{"lzListOrder", "list_orders" },
-				{"lzMarketList", "market_lists" },
-				{"lzQuote", "quotes" },
-				{"lzQuoteList", "quote_lists" },
-				{"lzParameter", "minerva_params" },
-				{"lzContingencyGroup", "contingency_groups" },
-				{"lzContingencyLink", "contingency_links" },
-				{"lzCharge", "charges" },
-				{"lzCollateral", "collaterals" },
+				{"lzControl", ("control_id","control_messages")},
+				{"lzExecutionMerge", ("merge_id","execution_merges")},
+				{"lzExecution", ("execution_id","executions")},
+				{"lzPairOff", ("pairoff_id","pairoffs")},
+				{"lzAudit", ("audit_event_id","audit_events") },
+				{"lzRelease", ("release_id","releases")},
+				{"lzAllocation", ("allocation_id", "allocations")},
+				{"lzStrategy", ("strategy_id", "strategies")},
+				{"lzOrder", ("order_id", "orders")},
+				{"lzListOrder", ("list_id", "list_orders")},
+				{"lzMarketList", ("market_list_id", "market_lists")},
+				{"lzQuote", ("quote_id", "quotes")},
+				{"lzQuoteList", ("quote_list_id", "quote_lists") },
+				{"lzParameter", ("parameter", "minerva_params")},
+				{"lzContingencyGroup", ("contingency_group_id", "contingency_groups")},
+				{"lzContingencyLink", ("contingency_link_Id", "contingency_links")},
+				{"lzCharge", ("charge_id", "charges")},
+				{"lzCollateral", ("collateral_id", "collaterals")},
 			};
+
+			_persistDesitination = persistDestination;
 		}
 
 		public async Task Start(string initialFile)
 		{
+			
 			_initialFile = initialFile;
 
-			_transactionsSource.ObserveOn(_scheduler).Subscribe(te => { }, () => { }, _tokenSource.Token);
+			_transactionsSource.ObserveOn(_scheduler).Subscribe(te => { _persistDesitination?.Persist(te); }, () => { }, _tokenSource.Token);
 
 			await FileSwitch.ForEachAsync<string>(async fileName => await PersistFile(fileName), _tokenSource.Token);
 		}
@@ -101,7 +104,6 @@ namespace Persistence
 		public void Stop()
 		{
 			_tokenSource.Cancel();
-			_pfsWatcher.StopWatching();
 			_currentPersistFile.Dispose();
 			_scheduler.Dispose();
 		}
@@ -124,15 +126,11 @@ namespace Persistence
 
 		private async Task PersistFile(string file)
 		{
-			if (_pfsWatcher != null)
-				_pfsWatcher.StopWatching();
-
+	
 			if (_currentPersistFile != null)
 				_currentPersistFile.Dispose();
 
 			_currentPersistFile = new PersistenceFile(file);
-
-			_pfsWatcher = new PersistenceFileWatcher(_currentPersistFile, new SystemFileWatcherWrapper(new FileInfo(file).FullName));
 
 			var elementObservable = _currentPersistFile.ElementSource.Subscribe(element => ParseElement(element), () => {
 				if (_currentPersistFile.IsFileSwitch)
@@ -171,11 +169,13 @@ namespace Persistence
 
 						string elementName = child.Name.LocalName;
 						if (!_elementNameMap.ContainsKey(elementName))
-							_elementNameMap.Add(elementName, string.Empty);
+							_elementNameMap.Add(elementName, (string.Empty, string.Empty));
 
-						transactionElements.Elements.Add(new TransactionElement(transaction_id,_elementNameMap[elementName],
+						transactionElements.Elements.Add(
+							new TransactionElement(transaction_id,_elementNameMap[elementName].name,
+							_elementNameMap[elementName].key,
 							_actionToActionTypeMap[action],
-							child.Attributes().ToDictionary(attr => attr.Name.LocalName, attr => attr.Value)));
+							child.Attributes().ToDictionary(attr => attr.Name.LocalName.ToLower(), attr => attr.Value)));
 					}
 					_transactionsSource.OnNext(transactionElements);
 				}

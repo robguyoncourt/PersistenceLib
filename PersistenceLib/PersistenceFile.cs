@@ -39,7 +39,7 @@ namespace Persistence
 			if (string.IsNullOrEmpty(path) || !File.Exists(path))
 				throw new ArgumentException("Filename " + path + " is invalid");
 
-			_xmlReader = XmlReader.Create(new FileStream(path, FileMode.Open, FileAccess.Read), CreateXMLReaderSettings());
+			_xmlReader = XmlReader.Create(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), CreateXMLReaderSettings());
 
 			_elementSubject = new Subject<XElement>();
 
