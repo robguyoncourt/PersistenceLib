@@ -15,7 +15,7 @@ namespace Persistence.UnitTests
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
-			PersistenceService ps = new PersistenceService();
+			PersistenceService ps = helper.GetTestPersistenceService();
 			int count = 0;
 			bool complete = false;
 			string tempFile = string.Empty;
@@ -46,7 +46,7 @@ namespace Persistence.UnitTests
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
-			PersistenceService ps = new PersistenceService(x => helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(x)),null);
+			PersistenceService ps = new PersistenceService(x => helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(x)), new TestHelper.TestPersistenceDestination(), null);
 			int count = 0;
 			bool complete = false;
 			string tempFile = string.Empty;
@@ -55,7 +55,6 @@ namespace Persistence.UnitTests
 			//act
 			try
 			{
-
 				subscription = ps.TransactionElementsSource.Subscribe(x => count += x.Elements.Count, () => complete = true);
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTSWITCH1FILE));
@@ -77,7 +76,7 @@ namespace Persistence.UnitTests
 		{
 			// arrange
 			TestHelper helper = new TestHelper();
-			PersistenceService ps = new PersistenceService();
+			PersistenceService ps = helper.GetTestPersistenceService();
 			int count = 0;
 			bool complete = false;
 			string tempFile = string.Empty;
@@ -86,7 +85,6 @@ namespace Persistence.UnitTests
 			// act
 			try
 			{
-
 				subscription = ps.TransactionElementsSource.Subscribe(x => count += x.Elements.Count, () => complete = true);
 
 				tempFile = helper.CreateTemporaryFileWithContent(helper.GetXMLFileAsString(helper.MEDIUMTESTFILE));
@@ -108,7 +106,7 @@ namespace Persistence.UnitTests
 		{
 			//arrange
 			TestHelper helper = new TestHelper();
-			PersistenceService ps = new PersistenceService();
+			PersistenceService ps = helper.GetTestPersistenceService();
 			int count = 0;
 			bool complete = false;
 			string tempFile = string.Empty;

@@ -26,21 +26,20 @@ namespace Persistence
 
 		private readonly Dictionary<string, ActionType> _actionToActionTypeMap;
 		private readonly Dictionary<string, (string key, string name)> _elementNameMap;
+		private readonly HashSet<string> _ignoreAttributes;
+
+		private readonly IPersistDestination _persistDesitination;
+		private readonly Dictionary<string, string> _dbConnectionParams;
 
 		private Subject<string> _fileSwitched = new Subject<string>();
 		private Subject<TransactionElements> _transactionsSource = new Subject<TransactionElements>();
 
 		private PersistenceFile _currentPersistFile;
-		private IPersistDestination _persistDesitination;
 
 		private long _initalTransactionId = INVALID_TRANS_ID;
 		private string _initialFile;
 
-		public PersistenceService() :
-			this(x => { return x;}, null)
-		{ }
-
-		public PersistenceService(Func<string, string> getFullFilePath, IPersistDestination persistDestination)
+		public PersistenceService(Func<string, string> getFullFilePath, IPersistDestination persistDestination, Dictionary<string, string> dbConnectionParams)
 		{
 			_getFullFilePath = getFullFilePath;
 			_tokenSource = new CancellationTokenSource();
@@ -48,15 +47,11 @@ namespace Persistence
 
 			_actionToActionTypeMap = new Dictionary<string, ActionType>
 			{
-				{"", ActionType.Unknown },
-				{"Amended", ActionType.Update },
 				{"Added", ActionType.Insert},
-				{"CancelledStatusUpdated", ActionType.Update },
-				{"RolledOver", ActionType.Update },
-				{"Sent", ActionType.Update },
-				{"Demoted", ActionType.Update },
-				{"PostConfirmed", ActionType.Update }
-
+				{"AddedFromOriginal", ActionType.Insert },
+				{"Login", ActionType.Insert },
+				{"MovedToOrder", ActionType.Insert },
+				{"AddedSent", ActionType.Insert },
 			};
 			
 			_elementNameMap = new Dictionary<string, (string key, string name)>
@@ -81,12 +76,24 @@ namespace Persistence
 				{"lzCollateral", ("collateral_id", "collaterals")},
 			};
 
+			_ignoreAttributes = new HashSet<string>
+			{
+				"dealing_notify",
+				"desk_notify" ,
+				"investment_notify" ,
+				"action" ,
+				"transaction_tag" ,
+				"summary_last_liquidity_display",
+			};
+
 			_persistDesitination = persistDestination;
+			_dbConnectionParams = dbConnectionParams;
 		}
 
 		public async Task Start(string initialFile)
 		{
-			
+			_persistDesitination.Connect(_dbConnectionParams);
+
 			_initialFile = initialFile;
 
 			_transactionsSource.ObserveOn(_scheduler).Subscribe(te => { _persistDesitination?.Persist(te); }, () => { }, _tokenSource.Token);
@@ -165,7 +172,7 @@ namespace Persistence
 
 						string action = child.Attribute("action").Value ?? string.Empty;
 						if (!_actionToActionTypeMap.ContainsKey(action))
-							_actionToActionTypeMap.Add(action, ActionType.Unknown);
+							_actionToActionTypeMap.Add(action, ActionType.Update);
 
 						string elementName = child.Name.LocalName;
 						if (!_elementNameMap.ContainsKey(elementName))
@@ -175,7 +182,9 @@ namespace Persistence
 							new TransactionElement(transaction_id,_elementNameMap[elementName].name,
 							_elementNameMap[elementName].key,
 							_actionToActionTypeMap[action],
-							child.Attributes().ToDictionary(attr => attr.Name.LocalName.ToLower(), attr => attr.Value)));
+							child.Attributes().Where(attr => !_ignoreAttributes.Contains(attr.Name.LocalName))
+							.ToDictionary(attr => attr.Name.LocalName.ToLower(), attr => attr.Value)
+							));
 					}
 					_transactionsSource.OnNext(transactionElements);
 				}

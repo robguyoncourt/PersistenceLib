@@ -2,35 +2,31 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Persistence
 {
-	public class PersistSQLServer : IPersistDestination, IDisposable
+	public class PersistenceDB : IPersistDestination, IDisposable
 	{
-		private const string DB_CONNECTION_STRING = "Server={0};Database={1};User Id={2};Password={3};";
 		private const int DB_COMMAND_TIMEOUT = 30;
 
 		private static readonly Object _lockObj = new Object();
 
-		public readonly string DBCONKEY_SERVER = "SERVER";
-		public readonly string DBCONKEY_DATABASE = "DATABASE";
-		public readonly string DBCONKEY_USERID = "USERID";
-		public readonly string DBCONKEY_PASSWORD = "PASSWORD";
-
 		private readonly List<(string key, string name)> _persistenceTableNames;
 		private readonly string _dbSchemaName;
-		private readonly SqlConnection _dbConnection;
+		private readonly IDBConnection _dbConnection;
 		private readonly Dictionary<string, ParameterisedSQL> _parameterisedQueryCache;
 
 		private bool _disposed;
 		private Dictionary<string, TableInfo> _persistenceSchema;
 
-		public PersistSQLServer(string dbSchemaName, List<(string key, string name)> persistenceTableNames)
+		public PersistenceDB(string dbSchemaName, List<(string key, string name)> persistenceTableNames, IDBConnection dbConnection)
 		{
-			_dbConnection = new SqlConnection();
+			_dbConnection = dbConnection;
 			_dbSchemaName = dbSchemaName;
 			_persistenceTableNames = persistenceTableNames;
 			_parameterisedQueryCache = new Dictionary<string, ParameterisedSQL>();
@@ -46,7 +42,7 @@ namespace Persistence
 			{
 				if (_dbConnection != null)
 				{
-					if (this.IsConnected)
+					if (_dbConnection.IsConnected)
 						_dbConnection.Close();
 
 					_dbConnection.Dispose();
@@ -62,16 +58,9 @@ namespace Persistence
 			GC.SuppressFinalize(this);
 		}
 
-		public bool IsConnected => _dbConnection.State == ConnectionState.Executing || 
-									_dbConnection.State == ConnectionState.Fetching || 
-									_dbConnection.State == ConnectionState.Open;
-
 		public void Connect(Dictionary<string, string> connectionParams)
 		{
-			_dbConnection.ConnectionString = @"Data Source=DESKTOP-EP61E82;Initial Catalog=Persistence;Integrated Security=False;User ID=ADOUSER;Password=latentzero";
-				//string.Format(DB_CONNECTION_STRING, connectionParams[DBCONKEY_SERVER], connectionParams[DBCONKEY_DATABASE],
-				//								connectionParams[DBCONKEY_USERID], connectionParams[DBCONKEY_PASSWORD]);
-			_dbConnection.Open();
+			_dbConnection.Open(connectionParams);
 
 			_persistenceSchema = _persistenceTableNames.ToDictionary(tn => tn.name, tn => new TableInfo(_dbConnection, _dbSchemaName, tn.name));
 
@@ -86,17 +75,15 @@ namespace Persistence
 		{
 			lock (_lockObj)
 			{
-				using (SqlTransaction sqlTransaction = _dbConnection.BeginTransaction())
+				using (IDBTransaction sqlTransaction = _dbConnection.BeginTransaction())
 				{
 					try
 					{
 						foreach (var element in tes.Elements)
 						{
-							SqlCommand sqlCommand = BuildSQLCommandForElement(element);
-							sqlCommand.Connection = _dbConnection;
-							sqlCommand.CommandTimeout = DB_COMMAND_TIMEOUT;
-							sqlCommand.Transaction = sqlTransaction;
-							sqlCommand.ExecuteNonQuery();
+							ParameterisedSQL parameterisedSql = GetParameterisedSQLForElement(element);
+							Dictionary<string, IDBSQLParameter> sqlParmas = PopulateSQLParamsWithElementValues(element, parameterisedSql);
+							sqlTransaction.ExecuteNonQuery(parameterisedSql.SQL, sqlParmas.Values.ToList(), DB_COMMAND_TIMEOUT);
 						}
 						sqlTransaction.Commit();
 					}
@@ -111,7 +98,34 @@ namespace Persistence
 			return Task.CompletedTask;
 		}
 
-		private SqlCommand BuildSQLCommandForElement(TransactionElement element)
+		private Dictionary<string, IDBSQLParameter> PopulateSQLParamsWithElementValues(TransactionElement element, ParameterisedSQL parameterisedSql)
+		{
+			var sqlParmas = parameterisedSql.Params;
+			foreach (var col in parameterisedSql.Cols)
+			{
+				sqlParmas[col.SQLParamName].Value = GetDBValue(element, col);
+			}
+
+			return sqlParmas;
+		}
+
+		private object GetDBValue(TransactionElement te, TableInfo.ColumnInfo col)
+		{
+			object retVal = te.Values[col.Name];
+
+			if (col.Type == SqlDbType.Decimal || col.Type == SqlDbType.Float || 
+				col.Type == SqlDbType.Real || col.Type == SqlDbType.Int)
+			{
+				if (col.AllowNull && string.IsNullOrEmpty(retVal.ToString()))
+				{
+					retVal = DBNull.Value;
+				}
+			}
+
+			return retVal;
+		}
+
+		private ParameterisedSQL GetParameterisedSQLForElement(TransactionElement element)
 		{
 
 			ParameterisedSQL paramSQL;
@@ -121,15 +135,8 @@ namespace Persistence
 				paramSQL = CreateParameterSQLAndAddToCache(element, paramSQL);
 			}
 
-			SqlCommand newCommand = new SqlCommand();
-			newCommand.CommandText = paramSQL.SQL;
-			foreach (var col in paramSQL.Cols)
-			{
-				newCommand.Parameters.Add(new SqlParameter("@"+col.Name, col.Type, col.Length));
-				newCommand.Parameters["@" + col.Name].Value = element.Values[col.Name]; // assumption that xml attributes and columns have same names
-			}
+			return paramSQL;
 
-			return newCommand;
 		}
 
 		private ParameterisedSQL CreateParameterSQLAndAddToCache(TransactionElement element, ParameterisedSQL paramSQL)
@@ -144,14 +151,18 @@ namespace Persistence
 				case ActionType.Insert:
 
 					//Build insert values
-					foreach (var col in element.Values.Keys)
+					foreach (var elemValKey in element.Values.Keys)
 					{
-						if (table.ColumnDefinitions.ContainsKey(col)) // assumption that xml attributes and columns have same names 
+						if (table.ColumnDefinitions.ContainsKey(elemValKey)) // assumption that xml attributes and columns have same names 
 						{
-							includedCols.Add(table.ColumnDefinitions[col]);
+							includedCols.Add(table.ColumnDefinitions[elemValKey]);
 							parameterBuilder.Append('@');
-							parameterBuilder.Append(col + ",");
-							valueBuilder.Append(col + ",");
+							parameterBuilder.Append(elemValKey + ",");
+							valueBuilder.Append(elemValKey + ",");
+						}
+						else
+						{
+							Debug.Print("DB Col Missing: " + elemValKey);
 						}
 					}
 					string insertSQL = $"INSERT INTO {table.Name} ({valueBuilder.ToString().TrimEnd(',')}) VALUES ({parameterBuilder.ToString().TrimEnd(',')})";
@@ -163,19 +174,23 @@ namespace Persistence
 				case ActionType.Update:
 
 					//Build update values
-					foreach (var col in element.Values.Keys)
+					foreach (var elemValKey in element.Values.Keys)
 					{
-						if (table.ColumnDefinitions.ContainsKey(col)) // assumption that xml attributes and columns have same names 
+						if (table.ColumnDefinitions.ContainsKey(elemValKey)) // assumption that xml attributes and columns have same names 
 						{
-							includedCols.Add(table.ColumnDefinitions[col]);
-							if (col != element.ElementKey)
+							includedCols.Add(table.ColumnDefinitions[elemValKey]);
+							if (elemValKey != element.ElementKey)
 							{
-								valueBuilder.Append(col);
-								parameterBuilder.Append(col);
+								valueBuilder.Append(elemValKey);
+								parameterBuilder.Append(elemValKey);
 								parameterBuilder.Append(" = @");
-								parameterBuilder.Append(col);
+								parameterBuilder.Append(elemValKey);
 								parameterBuilder.Append(",");
 							}
+						}
+						else
+						{
+							Debug.Print("DB Col Missing: " + elemValKey);
 						}
 					}
 					string amendSQL = $"UPDATE {table.Name} SET {parameterBuilder.ToString().TrimEnd(',')} WHERE {element.ElementKey} = @{element.ElementKey}";
@@ -198,6 +213,21 @@ namespace Persistence
 				SQL = sql;
 				Cols = cols;
 			}
+
+			internal Dictionary<string, IDBSQLParameter> Params 
+			{
+				get
+				{
+					Dictionary<string, IDBSQLParameter> retVal = new Dictionary<string, IDBSQLParameter>();
+					foreach (var col in Cols)
+					{
+						retVal.Add(col.SQLParamName, new SQLDBParam(col.SQLParamName, col.Type, col.Length));
+					}
+
+					return retVal;
+				}
+			}
+				
 		}
 
 		internal class TableInfo
@@ -205,32 +235,30 @@ namespace Persistence
 			internal string Schema { get; private set; }
 			internal string Name { get; private set; }
 			internal Dictionary<string, ColumnInfo> ColumnDefinitions { get; private set; } = new Dictionary<string, ColumnInfo>();
-			internal TableInfo(SqlConnection dbConnection, string schema, string name)
+			internal TableInfo(IDBConnection dbConnection, string schema, string name)
 			{
 				Schema = schema;
 				Name = name.ToLower();
 				PopulateColumnDefinitions(dbConnection);
 			}
 
-			private void PopulateColumnDefinitions(SqlConnection dbConnection)
+			private void PopulateColumnDefinitions(IDBConnection dbConnection)
 			{
 				DataTable tableSchema = GetSchemaTable(dbConnection);
+
+				//tableSchema.WriteXml(Path.GetTempFileName());
 
 				foreach (DataRow row in tableSchema.Rows)
 				{
 					string colName = row["ColumnName"].ToString().ToLower();
-					ColumnDefinitions.Add(colName, new ColumnInfo(colName, (SqlDbType)(int)row["ProviderType"], (int)row["ColumnSize"]));
+					ColumnDefinitions.Add(colName, new ColumnInfo(colName, (SqlDbType)Enum.Parse(typeof(SqlDbType), row["ProviderType"].ToString()), 
+						int.Parse(row["ColumnSize"].ToString()), bool.Parse(row["AllowDBNull"].ToString())));
 				}
 			}
 
-			private DataTable GetSchemaTable(SqlConnection dbConnection)
+			private DataTable GetSchemaTable(IDBConnection dbConnection)
 			{
-				SqlCommand cmd = dbConnection.CreateCommand();
-				cmd.CommandText = "SET FMTONLY ON; SELECT * FROM " + Name +" ; SET FMTONLY OFF";
-				using (SqlDataReader rdr = cmd.ExecuteReader())
-				{
-					return rdr.GetSchemaTable();
-				}
+				return dbConnection.GetTableSchema(Name, DB_COMMAND_TIMEOUT);
 			}
 
 			internal class ColumnInfo
@@ -238,12 +266,15 @@ namespace Persistence
 				internal string Name { get; private set; }
 				internal SqlDbType Type { get; private set; }
 				internal int Length { get; private set; }
-				internal ColumnInfo(string name, SqlDbType type, int length)
+				internal bool AllowNull { get; private set; }
+				internal ColumnInfo(string name, SqlDbType type, int length, bool allowNull)
 				{
 					Name = name.ToLower();
 					Type = type;
 					Length = length;
+					AllowNull = allowNull;
 				}
+				internal string SQLParamName { get => "@" + Name; }
 
 			}
 

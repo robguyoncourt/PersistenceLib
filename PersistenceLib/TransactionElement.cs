@@ -6,10 +6,9 @@ namespace Persistence
 
 	public enum ActionType
 	{
-		Unknown,
-		Insert,
 		Update,
-		Delete
+		Insert,
+		Delete,
 	}
 
 	public class TransactionElement
