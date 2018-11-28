@@ -12,6 +12,7 @@ namespace Persistence.UnitTests
 	{
 
 		[TestMethod]
+		[Ignore]
 		public async Task TestSmallTestFileWriteAsync()
 		{
 			// arrange
@@ -53,6 +54,7 @@ namespace Persistence.UnitTests
 		}
 
 		[TestMethod]
+		[Ignore]
 		public async Task TestBigFile()
 		{
 			// arrange
