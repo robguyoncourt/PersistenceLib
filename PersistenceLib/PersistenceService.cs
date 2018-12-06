@@ -112,7 +112,6 @@ namespace Persistence
 		{
 			_tokenSource.Cancel();
 			_currentPersistFile.Dispose();
-			_scheduler.Dispose();
 		}
 
 		public IObservable<TransactionElements> TransactionElementsSource
